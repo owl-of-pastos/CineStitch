@@ -75,6 +75,9 @@
         const MoveVertical = (props) => (
             <SvgIcon {...props}><polyline points="8 18 12 22 16 18"/><polyline points="8 6 12 2 16 6"/><line x1="12" x2="12" y1="2" y2="22"/></SvgIcon>
         );
+        const MoveHorizontal = (props) => (
+            <SvgIcon {...props}><polyline points="22 12 18 8 18 16"/><polyline points="2 12 6 8 6 16"/><line x1="2" x2="22" y1="12" y2="12"/></SvgIcon>
+        );
         const Trash2 = (props) => (
             <SvgIcon {...props}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></SvgIcon>
         );
@@ -125,6 +128,7 @@
                                     width: img.width,
                                     height: img.height,
                                     yOffset: 50, // 0 to 100 percentage for vertical cropping center
+                                    xOffset: 50, // ADDED: 0 to 100 percentage for horizontal cropping center
                                 });
                             };
                             img.src = event.target.result;
@@ -165,8 +169,12 @@
                 setImages(newImages);
             };
 
-            const updateImageOffset = (id, newOffset) => {
-                setImages(images.map(img => img.id === id ? { ...img, yOffset: newOffset } : img));
+            // Function to update crop offset for either X or Y axis
+            const updateImageCropOffset = (id, newOffset, axis) => {
+                setImages(images.map(img => img.id === id ? { 
+                    ...img, 
+                    [axis === 'y' ? 'yOffset' : 'xOffset']: newOffset 
+                } : img));
             };
 
             // Canvas Drawing Logic
@@ -188,7 +196,6 @@
                 const targetStripHeight = outputWidth / aspectRatio;
                 
                 // Calculate total canvas height
-                // (Height of all strips) + (Gaps between them) + (Top/Bottom padding)
                 const totalContentHeight = images.length * targetStripHeight;
                 const totalGaps = Math.max(0, images.length - 1) * gap;
                 const totalCanvasHeight = totalContentHeight + totalGaps + (paddingY * 2);
@@ -207,32 +214,36 @@
                     // Ensure we have the image element loaded
                     if (!img.imgElement) return;
 
-                    // Calculate source crop
-                    // We want to fit the image width to the output width, 
-                    // then crop the height to match aspect ratio.
-                    
-                    const scale = img.width / outputWidth;
-                    const sourceCropHeight = targetStripHeight * scale;
-                    
-                    // Safety check: if image is too short for the aspect ratio
-                    let sy, sh, sw, sx;
+                    let sx, sy, sw, sh; // Source X, Y, Width, Height (in original image pixels)
 
-                    if (img.height < sourceCropHeight) {
-                        // Image is wider/shorter than target aspect ratio (unlikely for cinema crop usually)
-                        // We fit height and crop width
-                        sh = img.height;
-                        sw = img.height * aspectRatio;
-                        sy = 0;
-                        sx = (img.width - sw) / 2; // Center horizontally
-                    } else {
-                        // Normal case: Image is taller, we crop height
+                    // Calculate the required crop height if we take the full source width
+                    const requiredCropHeightIfFullWidth = img.width / aspectRatio;
+                    // Calculate the required crop width if we take the full source height
+                    const requiredCropWidthIfFullHeight = img.height * aspectRatio;
+
+                    if (img.height >= requiredCropHeightIfFullWidth) {
+                        // Case 1: Image is tall enough. We crop height (Vertical Adjustment)
                         sw = img.width;
-                        sh = sourceCropHeight;
-                        sx = 0;
-                        
+                        sh = requiredCropHeightIfFullWidth;
+                        sx = 0; // Always start at 0 horizontally (full width is taken)
+
                         // Calculate Y offset based on user slider (0-100%)
-                        const maxScroll = img.height - sh;
-                        sy = maxScroll * (img.yOffset / 100);
+                        const maxScrollY = img.height - sh;
+                        sy = maxScrollY * (img.yOffset / 100);
+
+                    } else {
+                        // Case 2: Image is too wide/short (e.g., already very wide or square image with wide aspect ratio).
+                        // We fit the height and crop width (Horizontal Adjustment)
+                        sh = img.height;
+                        sw = requiredCropWidthIfFullHeight;
+                        sy = 0; // Always start at 0 vertically (full height is taken)
+                        
+                        // Calculate X offset based on user slider (0-100%)
+                        const maxScrollX = img.width - sw;
+                        // Use xOffset to determine the start X position
+                        // xOffset=0: sx=0 (left crop)
+                        // xOffset=100: sx=maxScrollX (right crop)
+                        sx = maxScrollX * (img.xOffset / 100);
                     }
 
                     // Draw Image
@@ -465,7 +476,7 @@
                                 </div>
                             </div>
                             
-                            {/* Position Slider */}
+                            {/* Position Slider (Vertical) */}
                             <div className="space-y-1">
                                 <div className="flex justify-between items-center text-[10px] text-zinc-500 uppercase tracking-wider">
                                     <span className="flex items-center gap-1"><MoveVertical size={10}/> 垂直构图位置</span>
@@ -476,7 +487,23 @@
                                     min="0"
                                     max="100"
                                     value={img.yOffset}
-                                    onChange={(e) => updateImageOffset(img.id, parseInt(e.target.value))}
+                                    onChange={(e) => updateImageCropOffset(img.id, parseInt(e.target.value), 'y')}
+                                    className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                />
+                            </div>
+
+                            {/* Position Slider (Horizontal) - ADDED */}
+                            <div className="space-y-1 mt-3">
+                                <div className="flex justify-between items-center text-[10px] text-zinc-500 uppercase tracking-wider">
+                                    <span className="flex items-center gap-1"><MoveHorizontal size={10}/> 水平构图位置</span>
+                                    <span>{Math.round(img.xOffset)}%</span>
+                                </div>
+                                <input 
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={img.xOffset}
+                                    onChange={(e) => updateImageCropOffset(img.id, parseInt(e.target.value), 'x')}
                                     className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                                 />
                             </div>
