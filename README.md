@@ -1,2 +1,2 @@
-# CineStitch-
+# CineStitch
 将你的图片裁剪至标准电影画幅、添加黑边，并进行拼接!
